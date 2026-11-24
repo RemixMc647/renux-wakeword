@@ -121,6 +121,7 @@ export function createWakeWord({ onWake, onStatus, threshold = 0.5 }) {
     }
     running = true;
     LiveAudioStream.start();
+    onStatus && onStatus('Listening for "' + WAKE_PHRASE + '"...');
   }
 
   return {
