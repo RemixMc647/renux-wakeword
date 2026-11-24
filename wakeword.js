@@ -21,7 +21,8 @@ const FILES = ["melspectrogram.onnx", "embedding_model.onnx", WAKE_MODEL];
 
 // Optional native modules: if one is missing, the wake word says so instead of crashing the app.
 let ort = null;
-try { ort = require("onnxruntime-react-native"); } catch (e) {}
+let ortError = "";
+try { ort = require("onnxruntime-react-native"); } catch (e) { ortError = (e && e.message) || "unknown"; }
 
 let LiveAudioStream = null;
 try {
@@ -69,7 +70,7 @@ export function createWakeWord({ onWake, onStatus, threshold = 0.5 }) {
 
   async function load() {
     if (engine) return;
-    if (!ort) throw new Error("onnxruntime-react-native is not in this build");
+    if (!ort) throw new Error("onnxruntime-react-native failed to load: " + (ortError || "not in this build"));
     if (!LiveAudioStream) throw new Error("react-native-live-audio-stream is not in this build");
     if (!FS) throw new Error("expo-file-system is not available");
 
