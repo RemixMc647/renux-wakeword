@@ -65,6 +65,15 @@ export function createWakeWord({ onWake, onStatus, threshold = 0.5 }) {
   let subscribed = false;
   let queue = Promise.resolve();
   let pending = 0;
+  let stage = "init";                         // which step we are on, shown if something fails
+  const describe = (e) => {
+    let msg = "";
+    try {
+      msg = (e && (e.message || e.code || e.name)) || String(e);
+      if (e && e.nativeStackAndroid) msg += " | " + String(e.nativeStackAndroid[0] && e.nativeStackAndroid[0].methodName);
+    } catch (x) {}
+    return "[" + stage + "] " + (msg || "no details");
+  };
   const splitter = new BlockSplitter();
   const detector = new WakeDetector(threshold, 2, 2500);
 
@@ -74,11 +83,16 @@ export function createWakeWord({ onWake, onStatus, threshold = 0.5 }) {
     if (!LiveAudioStream) throw new Error("react-native-live-audio-stream is not in this build");
     if (!FS) throw new Error("expo-file-system is not available");
 
+    stage = "download models";
     const p = await ensureModels(onStatus);
     onStatus && onStatus("Loading wake word...");
+    stage = "load mel model";
     const mel = await ort.InferenceSession.create(p["melspectrogram.onnx"]);
+    stage = "load embedding model";
     const emb = await ort.InferenceSession.create(p["embedding_model.onnx"]);
+    stage = "load hey_renux model";
     const wake = await ort.InferenceSession.create(p[WAKE_MODEL]);
+    stage = "create engine";
     engine = new WakeWordEngine(ort, { mel, emb, wake });
   }
 
@@ -102,18 +116,30 @@ export function createWakeWord({ onWake, onStatus, threshold = 0.5 }) {
   }
 
   async function doStart() {
+    try {
+      await doStartInner();
+    } catch (e) {
+      throw new Error(describe(e));
+    }
+  }
+
+  async function doStartInner() {
+    stage = "check native modules";
     await load();
 
+    stage = "mic permission";
     if (Platform.OS === "android") {
       const res = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
       if (res !== PermissionsAndroid.RESULTS.GRANTED) throw new Error("Microphone permission denied");
     }
 
+    stage = "warm up";
     engine.reset();
     await engine.warmUp();                    // about half a second
     splitter.reset();
     detector.reset();
 
+    stage = "mic stream";
     LiveAudioStream.init({ sampleRate: 16000, channels: 1, bitsPerSample: 16, audioSource: 6, bufferSize: 4096 });
     if (!subscribed) {
       LiveAudioStream.on("data", onData);
